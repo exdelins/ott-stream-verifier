@@ -811,12 +811,12 @@ def main():
 
     # Copiar a Dropbox local y en la nube
     if not args.no_dropbox:
-        dropbox_dir = "/Users/cesar/Dropbox"
+        dropbox_dir = os.path.join(os.path.expanduser("~"), "Dropbox")
         if os.path.exists(dropbox_dir):
             for fname, content in [("repos_verificados.m3u", m3u_all), ("deportes.m3u", m3u_dep), ("resto.m3u", m3u_res)]:
                 p_dbx = os.path.join(dropbox_dir, fname)
                 with open(p_dbx, "w", encoding="utf-8") as f: f.write(content)
-            cprint("  ✔ Listas copiadas a Dropbox local (/Users/cesar/Dropbox/)", Color.GREEN)
+            cprint(f"  ✔ Listas copiadas a Dropbox local ({dropbox_dir})", Color.GREEN)
 
         upload_dropbox_cloud(path_dep, remote_name="/deportes.m3u")
         upload_dropbox_cloud(path_res, remote_name="/resto.m3u")
