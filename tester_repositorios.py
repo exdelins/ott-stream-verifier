@@ -805,9 +805,35 @@ def main():
     with open(path_dep, "w", encoding="utf-8") as f: f.write(m3u_dep)
     with open(path_res, "w", encoding="utf-8") as f: f.write(m3u_res)
 
+    # Exportar canales.json para el visualizador web interactivo
+    path_json = os.path.join(base_dir, "canales.json")
+    json_list = []
+    for idx, (cat, item) in enumerate([("deportes", ch) for ch in sports_items] + [("resto", ch) for ch in resto_items]):
+        api_str = item.get("api", "").strip()
+        km = re.search(r'([a-fA-F0-9]{32}):([a-fA-F0-9]{32})', api_str)
+        u = item.get("clean_url", "")
+        grp = item.get("group", "")
+        c_grp = grp.split(" - ")[-1].strip() if " - " in grp else grp.strip()
+        json_list.append({
+            "id": idx,
+            "category": cat,
+            "title": item.get("title", ""),
+            "logo": item.get("logo", ""),
+            "group": grp,
+            "clean_group": c_grp,
+            "url": u,
+            "type": "mpd" if ".mpd" in u else "hls",
+            "has_drm": bool(km),
+            "kid": km.group(1) if km else "",
+            "key": km.group(2) if km else ""
+        })
+    with open(path_json, "w", encoding="utf-8") as f:
+        json.dump(json_list, f, ensure_ascii=False, indent=2)
+
     cprint(f"  ✔ Lista completa: {args.out}", Color.GREEN)
     cprint(f"  ✔ Lista deportes: {path_dep}", Color.GREEN)
     cprint(f"  ✔ Lista resto:    {path_res}", Color.GREEN)
+    cprint(f"  ✔ JSON catálogo:  {path_json}", Color.GREEN)
 
     # Copiar a Dropbox local y en la nube
     if not args.no_dropbox:
