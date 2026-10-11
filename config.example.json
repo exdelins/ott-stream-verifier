@@ -1,0 +1,8 @@
+{
+  "dropbox": {
+    "activo": false,
+    "app_key": "TU_APP_KEY_AQUI",
+    "app_secret": "TU_APP_SECRET_AQUI",
+    "refresh_token": "TU_REFRESH_TOKEN_AQUI"
+  }
+}

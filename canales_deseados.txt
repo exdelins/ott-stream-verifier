@@ -1,0 +1,17 @@
+# Filtros opcionales para tester_canales.py
+movistar
+dazn
+laliga
+champions
+eurosport
+tnt sports
+sky sports
+bein sports
+espn
+f1
+motogp
+premier league
+nba
+la 1
+antena 3
+amc

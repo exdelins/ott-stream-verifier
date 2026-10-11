@@ -1,0 +1,4 @@
+# OTT Stream Verifier Dependencies
+# El script usa principalmente la librería estándar de Python (urllib, ssl, json, concurrent.futures).
+# Las siguientes librerías son opcionales para integración extendida (ej. Dropbox):
+requests>=2.31.0

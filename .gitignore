@@ -1,0 +1,28 @@
+# Entornos y Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# Listas generadas (se generan en tiempo de ejecución)
+*.m3u
+*.m3u8
+*.tmp
+
+# Logs y ficheros temporales
+*.log
+*.pid
+.lock*
+
+# Configuración privada y tokens (NO SUBIR NUNCA)
+dropbox.json
+estado.json
+*.session
+*.session-journal
+.env
+*.conf
+*.key
+*.pem
+id_rsa*

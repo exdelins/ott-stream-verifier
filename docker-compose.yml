@@ -1,0 +1,11 @@
+version: "3.8"
+
+services:
+  ott-verifier:
+    build: .
+    container_name: ott-stream-verifier
+    restart: unless-stopped
+    volumes:
+      - ./output:/app/output
+      - ./repositorios.txt:/app/repositorios.txt
+    command: ["python", "tester_repositorios.py", "-o", "output/repos_verificados.m3u", "--no-dropbox"]
