@@ -482,10 +482,10 @@ def test_stream_live(item: Dict[str, Any], timeout: float = 3.5) -> Tuple[bool, 
         return False, str(e)[:35], time.time() - t_start
 
 
-def build_m3u_entry(item: Dict[str, Any]) -> str:
+def build_m3u_entry(item: Dict[str, Any], override_group: Optional[str] = None) -> str:
     title = item["title"]
     logo = item.get("logo", "")
-    group = item.get("group", "Deportes")
+    group = override_group if override_group is not None else item.get("group", "Deportes")
     clean_url = item["clean_url"]
     headers = item.get("headers", {})
     api_key = item.get("api", "").strip()
@@ -792,8 +792,9 @@ def main():
     header_dep = f'#EXTM3U name="OTT Deportes & Eventos Verificados ({timestamp_str})"\n\n'
     header_res = f'#EXTM3U name="OTT Resto TV & Noticias ({timestamp_str})"\n\n'
 
+    sports_sorted = sorted(sports_items, key=lambda x: x["title"].lower())
     m3u_all = header_all + "\n\n".join(build_m3u_entry(ch) for ch in final_verified) + "\n"
-    m3u_dep = header_dep + "\n\n".join(build_m3u_entry(ch) for ch in sports_items) + "\n"
+    m3u_dep = header_dep + "\n\n".join(build_m3u_entry(ch, override_group="Deportes") for ch in sports_sorted) + "\n"
     m3u_res = header_res + "\n\n".join(build_m3u_entry(ch) for ch in resto_items) + "\n"
 
     # Guardar en NAS / Local
