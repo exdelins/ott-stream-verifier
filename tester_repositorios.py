@@ -143,6 +143,45 @@ def parse_repo_file(filepath: str) -> List[Tuple[str, str]]:
 
 
 # ----------------------------------------------------------------------
+# HELPER DE FECHAS PARA EVENTOS DEPORTIVOS
+# ----------------------------------------------------------------------
+def normalize_event_date(raw_date_str: Optional[str]) -> Optional[str]:
+    if not raw_date_str:
+        return None
+    raw = str(raw_date_str).strip()
+    m1 = re.match(r"^(\d{4})[/-](\d{1,2})[/-](\d{1,2})", raw)
+    if m1:
+        y, m, d = m1.group(1), int(m1.group(2)), int(m1.group(3))
+        return f"{d:02d}/{m:02d}/{y}"
+    m2 = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})", raw)
+    if m2:
+        d, m, y = int(m2.group(1)), int(m2.group(2)), m2.group(3)
+        return f"{d:02d}/{m:02d}/{y}"
+    return None
+
+
+def extract_date_from_title(title: str) -> Optional[str]:
+    if not title:
+        return None
+    m = re.search(r"(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?", title)
+    if m:
+        d, mth = int(m.group(1)), int(m.group(2))
+        y = m.group(3) if m.group(3) else time.strftime("%Y")
+        if 1 <= d <= 31 and 1 <= mth <= 12:
+            return f"{d:02d}/{mth:02d}/{y}"
+    return None
+
+
+def get_sports_group(item: Dict[str, Any]) -> str:
+    ev_date = item.get("event_date")
+    if not ev_date:
+        ev_date = extract_date_from_title(item.get("title", ""))
+    if ev_date:
+        return f"Deportes - {ev_date}"
+    return "Deportes - Canales 24/7"
+
+
+# ----------------------------------------------------------------------
 # PARSEO DE CANALES (M3U Y JSON)
 # ----------------------------------------------------------------------
 def parse_m3u_text(text: str, repo_name: str) -> List[Dict[str, Any]]:
@@ -198,7 +237,8 @@ def parse_m3u_text(text: str, repo_name: str) -> List[Dict[str, Any]]:
                         "logo": logo,
                         "group": group,
                         "ua": ua,
-                        "referer": referer
+                        "referer": referer,
+                        "event_date": extract_date_from_title(title)
                     })
         i += 1
     return channels
@@ -213,6 +253,8 @@ def parse_json_content(data: Any, repo_name: str) -> List[Dict[str, Any]]:
             ev_title = match.get("event_name") or match.get("title") or "Evento Live"
             status = match.get("status", "LIVE")
             group = f"{repo_name} - {cat}"
+            raw_time = match.get("eventInfo", {}).get("startTime") or match.get("startTime") or ""
+            ev_date = normalize_event_date(raw_time) or extract_date_from_title(ev_title)
 
             for ch in match.get("channels", []):
                 st_url = ch.get("stream_url", "").strip()
@@ -234,7 +276,8 @@ def parse_json_content(data: Any, repo_name: str) -> List[Dict[str, Any]]:
                         "logo": "",
                         "group": group,
                         "ua": ch.get("user_agent", ""),
-                        "referer": ch.get("referer", "")
+                        "referer": ch.get("referer", ""),
+                        "event_date": ev_date
                     })
 
     # 2. Listas JSON (darkbyte o DudeTV)
@@ -244,6 +287,7 @@ def parse_json_content(data: Any, repo_name: str) -> List[Dict[str, Any]]:
                 ch_name = item.get("name", "Canal")
                 logo = item.get("logo", "")
                 group = f"{repo_name} - TV"
+                ev_date = extract_date_from_title(ch_name)
                 for s in item.get("streams", []):
                     st_url = s.get("link", "").strip() if isinstance(s, dict) else ""
                     if not st_url or not st_url.startswith("http"):
@@ -259,13 +303,16 @@ def parse_json_content(data: Any, repo_name: str) -> List[Dict[str, Any]]:
                             "url": st_url,
                             "api": s.get("key", "") or "",
                             "logo": logo,
-                            "group": group
+                            "group": group,
+                            "event_date": ev_date
                         })
             elif isinstance(item, dict) and "decoded_channels" in item:
                 ev_name = item.get("eventInfo", {}).get("eventName") or item.get("title") or "Evento"
                 cat = item.get("cat") or "Deportes"
                 group = f"{repo_name} - {cat}"
                 logo = item.get("eventInfo", {}).get("eventBanner") or ""
+                raw_time = item.get("eventInfo", {}).get("startTime") or item.get("startTime") or ""
+                ev_date = normalize_event_date(raw_time) or extract_date_from_title(ev_name)
                 for ch in item.get("decoded_channels", []):
                     link = ch.get("link", "").strip()
                     if not link or "taifood" in link or "/embed/" in link or not link.startswith("http"):
@@ -277,12 +324,14 @@ def parse_json_content(data: Any, repo_name: str) -> List[Dict[str, Any]]:
                             "url": link,
                             "api": ch.get("api", "").strip(),
                             "logo": ch.get("logo") or logo,
-                            "group": group
+                            "group": group,
+                            "event_date": ev_date
                         })
             elif isinstance(item, dict) and "id" in item and "title" in item and "decoded_channels" not in item:
                 cid = item.get("id")
                 sp_title = item.get("title", "Deportes")
                 sp_logo = item.get("image", "")
+                ev_date = extract_date_from_title(sp_title)
                 c_url = f"https://raw.githubusercontent.com/mdjamsad9/dudetvapi/main/public_decrypted/channels/{cid}.json"
                 c_data = fetch_json(c_url, timeout=6) or []
                 for ch in c_data:
@@ -296,7 +345,8 @@ def parse_json_content(data: Any, repo_name: str) -> List[Dict[str, Any]]:
                             "url": link,
                             "api": ch.get("api", "").strip(),
                             "logo": ch.get("logo") or sp_logo,
-                            "group": f"{repo_name} - {sp_title}"
+                            "group": f"{repo_name} - {sp_title}",
+                            "event_date": ev_date
                         })
     return channels
 
@@ -792,9 +842,22 @@ def main():
     header_dep = f'#EXTM3U name="OTT Deportes & Eventos Verificados ({timestamp_str})"\n\n'
     header_res = f'#EXTM3U name="OTT Resto TV & Noticias ({timestamp_str})"\n\n'
 
-    sports_sorted = sorted(sports_items, key=lambda x: x["title"].lower())
+    def sports_sort_key(ch: Dict[str, Any]) -> Tuple[int, str, str]:
+        grp = get_sports_group(ch)
+        if grp == "Deportes - Canales 24/7":
+            return (0, "0000-00-00", ch["title"].lower())
+        else:
+            date_str = grp.replace("Deportes - ", "").strip()
+            parts = date_str.split("/")
+            if len(parts) == 3:
+                iso = f"{parts[2]}-{parts[1]}-{parts[0]}"
+            else:
+                iso = date_str
+            return (1, iso, ch["title"].lower())
+
+    sports_sorted = sorted(sports_items, key=sports_sort_key)
     m3u_all = header_all + "\n\n".join(build_m3u_entry(ch) for ch in final_verified) + "\n"
-    m3u_dep = header_dep + "\n\n".join(build_m3u_entry(ch, override_group="Deportes") for ch in sports_sorted) + "\n"
+    m3u_dep = header_dep + "\n\n".join(build_m3u_entry(ch, override_group=get_sports_group(ch)) for ch in sports_sorted) + "\n"
     m3u_res = header_res + "\n\n".join(build_m3u_entry(ch) for ch in resto_items) + "\n"
 
     # Guardar en NAS / Local
