@@ -2,22 +2,19 @@
 # -*- coding: utf-8 -*-
 """
 ==============================================================================
- OTT STREAM VERIFIER & CLEARKEY DRM CHECKER
+ TESTEADOR Y VERIFICADOR PROFUNDO DE REPOSITORIOS OTT (MPD & HLS CLEARKEY)
 ==============================================================================
-Herramienta avanzada para descarga, deduplicación inteligente y verificación
-profunda de streams OTT (MPEG-DASH .mpd con ClearKey DRM y Apple HLS .m3u8).
-
-Características:
- - Acepta URLs de repositorios de GitHub (convierte blob a raw automáticamente).
- - Filtra EXCLUSIVAMENTE streams OTT (rechaza TS y servidores Xtream clásicos).
- - Deduplica por URL normalizada y por par KID:KEY.
- - Comprobación profunda de señal de vídeo (descarga real de segmentos init/chunks).
- - Validación estricta de DRM ClearKey (coincidencia de KID con el manifest MPD).
- - Generación automática de listas M3U estándar con #KODIPROP:
-    * Lista completa (repos_verificados.m3u)
-    * Lista de Deportes y Eventos (deportes.m3u)
-    * Lista del Resto (resto.m3u)
- - Sincronización opcional con Dropbox.
+1. Lee repositorios desde repositorios.txt (convierte siempre a versión raw).
+2. Filtra EXCLUSIVAMENTE streams OTT (MPEG-DASH .mpd y HLS .m3u8).
+3. Deduplicación inteligente:
+   - Por URL normalizada.
+   - Por KID y KEY (evita canales duplicados con nombres diferentes).
+4. Verificación PROFUNDA de vídeo y DRM:
+   - Comprueba manifest HTTP 200.
+   - Comprueba si el MPD es cifrado y valida coincidencia exacta entre KID de la key y default_KID del manifest.
+   - Autoresuelve keys faltantes usando la base de datos de 47.000+ claves de telegramm3u.
+   - Descarga segmento init/chunk real de vídeo para garantizar que el canal SE VE y emite señal activa.
+5. Exporta el M3U final (#KODIPROP) y sincroniza automáticamente con Dropbox local y en la nube.
 ==============================================================================
 """
 
@@ -72,29 +69,33 @@ def fetch_json(url: str, timeout: int = 15) -> Optional[Any]:
         return None
 
 
+# ----------------------------------------------------------------------
+# CARGA DE BASE DE DATOS DE CLAVES KID2KEY (TELEGRAM M3U)
+# ----------------------------------------------------------------------
 GLOBAL_KID2KEY: Dict[str, str] = {}
 
-def load_global_kid2key(custom_path: Optional[str] = None):
+def load_global_kid2key():
     global GLOBAL_KID2KEY
-    candidates = [
-        custom_path,
-        "kid2key.json",
-        "estado.json",
-        "/Volumes/docker/telegramm3u/estado.json"
+    paths = [
+        "/Volumes/docker/telegramm3u/estado.json",
+        "/Volumes/docker/jarvis/estado.json"
     ]
-    for p in candidates:
-        if p and os.path.exists(p):
+    for p in paths:
+        if os.path.exists(p):
             try:
                 t0 = time.time()
                 with open(p, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                GLOBAL_KID2KEY = data.get("kid2key", data if isinstance(data, dict) else {})
-                cprint(f"  ✔ Base de datos ClearKey cargada desde '{p}': {len(GLOBAL_KID2KEY)} claves ({time.time()-t0:.2f}s)", Color.GREEN)
+                GLOBAL_KID2KEY = data.get("kid2key", {})
+                cprint(f"  ✔ Base de datos local ClearKey cargada: {len(GLOBAL_KID2KEY)} claves ({time.time()-t0:.2f}s)", Color.GREEN)
                 return
             except Exception:
                 pass
 
 
+# ----------------------------------------------------------------------
+# EXTRACCIÓN Y CONVERSIÓN DE URLS DE REPOSITORIOS A VERSIÓN RAW
+# ----------------------------------------------------------------------
 def parse_repo_file(filepath: str) -> List[Tuple[str, str]]:
     if not os.path.exists(filepath):
         cprint(f"⚠ Fichero '{filepath}' no encontrado.", Color.RED, bold=True)
@@ -113,11 +114,14 @@ def parse_repo_file(filepath: str) -> List[Tuple[str, str]]:
             continue
         seen.add(u)
 
+        # Si es el directorio de DudeTV API public_decrypted
         if "dudetvapi" in u and "public_decrypted" in u:
             clean_repos.append(("DudeTV Events (events_with_channels.json)", "https://raw.githubusercontent.com/mdjamsad9/dudetvapi/main/public_decrypted/events_with_channels.json"))
             clean_repos.append(("DudeTV Sports (sports.json)", "https://raw.githubusercontent.com/mdjamsad9/dudetvapi/main/public_decrypted/sports.json"))
             continue
 
+        # Convertir SIEMPRE cualquier URL de GitHub a su versión RAW oficial:
+        # github.com/user/repo/blob/branch/path -> raw.githubusercontent.com/user/repo/branch/path
         if "github.com" in u:
             raw_u = u.replace("github.com", "raw.githubusercontent.com")
             raw_u = re.sub(r'/(blob|raw)/', '/', raw_u)
@@ -138,6 +142,9 @@ def parse_repo_file(filepath: str) -> List[Tuple[str, str]]:
     return clean_repos
 
 
+# ----------------------------------------------------------------------
+# PARSEO DE CANALES (M3U Y JSON)
+# ----------------------------------------------------------------------
 def parse_m3u_text(text: str, repo_name: str) -> List[Dict[str, Any]]:
     channels = []
     lines = text.splitlines()
@@ -182,6 +189,7 @@ def parse_m3u_text(text: str, repo_name: str) -> List[Dict[str, Any]]:
                 is_hls = ".m3u8" in clean_chk
                 is_ts = ".ts" in clean_chk or bool(re.search(r':\d+/(live/)?[a-zA-Z0-9]+/[a-zA-Z0-9]+/\d+', url_stream))
 
+                # REGLA ESTRICTA: Solo MPD o HLS, nunca TS ni Xtream
                 if (is_mpd or is_hls) and not is_ts:
                     channels.append({
                         "title": title,
@@ -198,6 +206,7 @@ def parse_m3u_text(text: str, repo_name: str) -> List[Dict[str, Any]]:
 
 def parse_json_content(data: Any, repo_name: str) -> List[Dict[str, Any]]:
     channels = []
+    # 1. Sports_data.json
     if isinstance(data, dict) and "matches" in data:
         for match in data.get("matches", []):
             cat = match.get("Category", "Sports")
@@ -228,6 +237,7 @@ def parse_json_content(data: Any, repo_name: str) -> List[Dict[str, Any]]:
                         "referer": ch.get("referer", "")
                     })
 
+    # 2. Listas JSON (darkbyte o DudeTV)
     elif isinstance(data, list):
         for item in data:
             if isinstance(item, dict) and "streams" in item:
@@ -291,6 +301,9 @@ def parse_json_content(data: Any, repo_name: str) -> List[Dict[str, Any]]:
     return channels
 
 
+# ----------------------------------------------------------------------
+# DEDUPLICACIÓN INTELIGENTE POR URL Y POR KID / KEY
+# ----------------------------------------------------------------------
 def extract_kid_from_api(api_key: str) -> Optional[str]:
     if api_key and ":" in api_key:
         kid = api_key.split(":")[0].replace("-", "").strip().lower()
@@ -300,20 +313,28 @@ def extract_kid_from_api(api_key: str) -> Optional[str]:
 
 
 def deduplicate_channels(channels: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Quita duplicados combinando:
+    1. URL normalizada (sin parámetros efímeros de sesión).
+    2. Par KID:KEY (si dos canales de diferente repositorio usan la misma clave DRM, es la misma emisión).
+    """
     seen_urls: Set[str] = set()
     seen_kid_keys: Set[str] = set()
     unique_list: List[Dict[str, Any]] = []
 
     for item in channels:
         raw_u = item["url"].split("|")[0].strip()
+        # Normalizar URL (quitar parámetros de sesión variables como ?session=... o ?aws_sessionId=...)
         norm_url = re.sub(r'(\?|&)(aws_sessionId|token|auth|sessionId)=[^&]+', '', raw_u).rstrip("?")
 
         api = item.get("api", "").strip()
         kid = extract_kid_from_api(api)
 
+        # Si ya hemos visto esta URL normalizada, es duplicado
         if norm_url in seen_urls:
             continue
 
+        # Si tiene KID y ya hemos visto este mismo KID/KEY, es duplicado de emisión
         if kid and api:
             if api.lower() in seen_kid_keys:
                 continue
@@ -328,7 +349,20 @@ def deduplicate_channels(channels: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     return unique_list
 
 
+# ----------------------------------------------------------------------
+# VERIFICACIÓN PROFUNDA DE VÍDEO Y VALIDACIÓN ESTRICTA DE CLEARKEY
+# ----------------------------------------------------------------------
 def test_stream_live(item: Dict[str, Any], timeout: float = 3.5) -> Tuple[bool, str, float]:
+    """
+    1. Comprueba HTTP 200 del manifest.
+    2. Para MPEG-DASH (.mpd):
+       - Detecta si está cifrado con DRM.
+       - Valida que la KID coincida EXACTAMENTE con default_KID del manifest.
+       - Si no tiene key, busca en la base de datos GLOBAL_KID2KEY para rescatarla.
+       - Descarga el segmento init/chunk real de vídeo. Si da 404, 403 o 0 bytes, SE DESCARTA.
+    3. Para HLS (.m3u8):
+       - Comprueba #EXTM3U y verifica descarga real del primer chunk de vídeo (.ts / .m4s).
+    """
     raw_url = item["url"]
     clean_url = raw_url.split("|")[0].strip()
 
@@ -352,6 +386,7 @@ def test_stream_live(item: Dict[str, Any], timeout: float = 3.5) -> Tuple[bool, 
     t_start = time.time()
 
     try:
+        # 1. Comprobar manifest principal
         req = urllib.request.Request(clean_url, headers=headers)
         with urllib.request.urlopen(req, context=SSL_CTX, timeout=timeout) as resp:
             if resp.status != 200:
@@ -360,14 +395,17 @@ def test_stream_live(item: Dict[str, Any], timeout: float = 3.5) -> Tuple[bool, 
             if len(content) < 40:
                 return False, "Manifest vacío (<40 bytes)", time.time() - t_start
 
+        # 2. Análisis exhaustivo para MPEG-DASH (MPD)
         if "mpd" in clean_url.lower():
             text = content.decode("utf-8", errors="ignore")
             if "<Period" not in text and "<MPD" not in text:
                 return False, "Formato MPD inválido", time.time() - t_start
 
+            # Extraer KIDs del manifest
             kids_in_mpd = [k.replace("-", "").strip().lower() for k in re.findall(r'default_KID="([a-fA-F0-9-]+)"', text, re.I)]
             is_encrypted = ("<ContentProtection" in text) or bool(kids_in_mpd)
 
+            # Si es cifrado pero no tiene clave, intentar autoresolver desde kid2key de telegramm3u
             if is_encrypted and (not api_key or ":" not in api_key):
                 for k_mpd in kids_in_mpd:
                     if k_mpd in GLOBAL_KID2KEY:
@@ -375,6 +413,7 @@ def test_stream_live(item: Dict[str, Any], timeout: float = 3.5) -> Tuple[bool, 
                         item["api"] = api_key
                         break
 
+            # VALIDACIÓN ESTRICTA DE CLEARKEY:
             if is_encrypted:
                 if not api_key or ":" not in api_key:
                     return False, "MPD cifrado sin clave ClearKey", time.time() - t_start
@@ -383,9 +422,11 @@ def test_stream_live(item: Dict[str, Any], timeout: float = 3.5) -> Tuple[bool, 
                 if kids_in_mpd and api_kid not in kids_in_mpd:
                     return False, "KID no coincide con manifest", time.time() - t_start
 
+            # MIRA SI SE VE: Prueba de segmento de inicialización / vídeo real
             m_init = re.search(r'initialization="([^"]+)"', text)
             if m_init:
                 init_pattern = m_init.group(1)
+                # Resolver variable $RepresentationID$ con el primer ID de representación
                 m_rep = re.search(r'<Representation\s+id="([^"]+)"', text)
                 rep_id = m_rep.group(1) if m_rep else "1"
                 init_rel = init_pattern.replace("$RepresentationID$", rep_id)
@@ -406,11 +447,13 @@ def test_stream_live(item: Dict[str, Any], timeout: float = 3.5) -> Tuple[bool, 
                 except Exception:
                     pass
 
+        # 3. Análisis exhaustivo para HLS (.m3u8)
         elif "m3u8" in clean_url.lower():
             text = content.decode("utf-8", errors="ignore")
             if "#EXTM3U" not in text:
                 return False, "Formato M3U8 inválido", time.time() - t_start
 
+            # Probar el primer segmento .ts o .m4s del playlist
             m_chunk = re.search(r'([^\s\r\n]+\.(?:ts|m4s)[^\s\r\n]*)', text)
             if m_chunk:
                 chunk_rel = m_chunk.group(1)
@@ -476,8 +519,14 @@ def build_m3u_entry(item: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# ----------------------------------------------------------------------
+# SUBIDA AUTOMÁTICA A DROPBOX
+# ----------------------------------------------------------------------
 def upload_dropbox_cloud(local_path: str, remote_name: str = "/repos_verificados.m3u"):
-    config_paths = ["dropbox.json", "conf/dropbox.json"]
+    config_paths = [
+        "/Volumes/docker/python/eventosDazn/dropbox.json",
+        "/Volumes/docker/telegramm3u/conf/dropbox.json"
+    ]
     cfg_file = next((p for p in config_paths if os.path.exists(p)), None)
     if not cfg_file:
         return
@@ -495,6 +544,7 @@ def upload_dropbox_cloud(local_path: str, remote_name: str = "/repos_verificados
         if not (app_key and app_secret and refresh_token):
             return
 
+        # Refrescar token
         req_token = urllib.request.Request(
             "https://api.dropbox.com/oauth2/token",
             data=urllib.parse.urlencode({
@@ -530,10 +580,15 @@ def upload_dropbox_cloud(local_path: str, remote_name: str = "/repos_verificados
         cprint(f"  ⚠ [Dropbox Cloud] Error: {e}", Color.YELLOW)
 
 
+# ----------------------------------------------------------------------
+# PROGRAMA PRINCIPAL
+# ----------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="OTT Stream Verifier (MPD & HLS ClearKey)")
-    parser.add_argument("-f", "--file", default="repositorios.txt", help="Fichero con lista de URLs de repositorios (default: repositorios.txt)")
-    parser.add_argument("-o", "--out", default="repos_verificados.m3u", help="Fichero M3U de salida (default: repos_verificados.m3u)")
+    parser = argparse.ArgumentParser(description="Testeador y Verificador Profundo de Repositorios OTT (MPD & HLS ClearKey)")
+    parser.add_argument("-f", "--file", default="/Volumes/docker/python/iptv_xtream/repositorios.txt",
+                        help="Fichero con lista de URLs de repositorios (por defecto: repositorios.txt)")
+    parser.add_argument("-o", "--out", default="/Volumes/docker/python/iptv_xtream/repos_verificados.m3u",
+                        help="Fichero M3U de salida")
     parser.add_argument("-t", "--threads", type=int, default=35, help="Número de hilos paralelos")
     parser.add_argument("--timeout", type=float, default=3.5, help="Timeout por canal en segundos")
     parser.add_argument("--no-dropbox", action="store_true", help="No subir a Dropbox")
@@ -543,7 +598,10 @@ def main():
     cprint(" VERIFICADOR PROFUNDO DE REPOSITORIOS GITHUB OTT (MPD & HLS CLEARKEY) ", Color.CYAN, bold=True)
     print("=" * 80)
 
+    # 1. Cargar base de datos ClearKey local si está disponible
     load_global_kid2key()
+
+    # 2. Leer repositorios del fichero
     repos = parse_repo_file(args.file)
     cprint(f"\n[1/4] Leyendo repositorios desde '{os.path.basename(args.file)}'...", Color.WHITE, bold=True)
     cprint(f"  Total de URLs de repositorios detectadas: {len(repos)}", Color.GREEN, bold=True)
@@ -552,6 +610,7 @@ def main():
         cprint("⚠ No se encontraron URLs en el fichero proporcionado.", Color.RED, bold=True)
         return
 
+    # 3. Descargar y parsear cada repositorio
     cprint("\n[2/4] Descargando y parseando canales (exclusivamente MPD y HLS)...", Color.CYAN, bold=True)
     all_raw: List[Dict[str, Any]] = []
 
@@ -578,6 +637,7 @@ def main():
         else:
             cprint(f"  - {disp_name:<45} -> 0 streams MPD/HLS", Color.YELLOW)
 
+    # 4. Deduplicar por URL y por KID/KEY
     unique_candidates = deduplicate_channels(all_raw)
     cprint(f"\n  Total streams brutos:                    {len(all_raw)}", Color.WHITE)
     cprint(f"  Duplicados descartados (por URL y KID):  {len(all_raw) - len(unique_candidates)}", Color.YELLOW)
@@ -587,7 +647,11 @@ def main():
         cprint("⚠ No hay canales disponibles para testear.", Color.RED)
         return
 
+    # 5. Verificación profunda en tiempo real
     cprint(f"\n[3/4] Verificando emisión real y validez de claves DRM ({args.threads} hilos)...", Color.YELLOW, bold=True)
+    cprint("      * Comprobando que el MPD responda HTTP 200", Color.WHITE)
+    cprint("      * Validando coincidencia exacta entre la clave y el default_KID del manifest", Color.WHITE)
+    cprint("      * Descargando bytes reales del segmento de vídeo (garantía de que SE VE)", Color.WHITE)
     print("-" * 80)
 
     verified_items = []
@@ -608,6 +672,7 @@ def main():
                 dead_items.append((ch, msg))
                 cprint(f"  [✗ OFFLINE] {ch['title'][:55]:<55} -> {msg}", Color.RED)
 
+    # Segunda deduplicación post-verificación (si dos manifests resolvieron al mismo default_KID verificado)
     final_verified = []
     seen_final_kids = set()
     seen_final_urls = set()
@@ -629,28 +694,91 @@ def main():
     cprint(f"  [CANALES VIVOS EMITIENDO VÍDEO REAL Y DRM VÁLIDO]: {len(final_verified)} canales", Color.GREEN, bold=True)
     cprint(f"  [CANALES CAÍDOS, REPETIDOS O CON ERROR DE CLAVE] : {len(all_raw) - len(final_verified)} descartados", Color.RED)
 
+    # 6. Clasificación: Lista de Deportes (con eventos siempre) y Lista de Resto
     cprint(f"\n[4/4] Separando y generando listas (Deportes vs Resto)...", Color.WHITE, bold=True)
 
-    sports_keywords = [
-        'deport', 'sport', 'futbol', 'football', 'soccer', 'laliga', 'liga', 'campeones',
-        'champions', 'dazn', 'eurosport', 'bein', 'espn', 'tnt sport', 'sky sport',
-        'f1', 'formula', 'motogp', 'moto gp', 'nba', 'nfl', 'nhl', 'mlb', 'ufc', 'wwe',
-        'boxing', 'boxeo', 'premier league', 'golf', 'tennis', 'tenis', 'cricket',
-        'rugby', 'racing', 'barca tv', 'real madrid', 'match!', 'fifa', 'fancode',
-        'willow', 'caze', 'calcio', 'bundesliga', 'stan sport', 'optus', 'super sport',
-        'astro', 'sportv', 'redzone', 'one fight',
-        '⚽', '🏀', '🎾', '🏎', '🥊', '🏈', '🏉', '🎱', '⛷', '🚴', '🏌'
+    SPORTS_PATTERNS = [
+        r'\bdeport', r'\bsport\b', r'\bsports\b', r'\bfutbol\b', r'\bfootball\b', r'\bsoccer\b',
+        r'\blaliga\b', r'\bliga de campeones\b', r'\bchampions league\b', r'\bdazn\b', r'\beurosport\b',
+        r'\bbein\b', r'\bespn\b', r'\btnt sports?\b', r'\bsky sports?\b', r'\bf1\b', r'\bformula 1\b',
+        r'\bmotogp\b', r'\bmoto gp\b', r'\bnba\b', r'\bnfl\b', r'\bnhl\b', r'\bmlb\b', r'\bufc\b',
+        r'\bwwe\b', r'\bboxing\b', r'\bboxeo\b', r'\bpremier league\b', r'\bgolf\b', r'\btennis\b',
+        r'\btenis\b', r'\bcricket\b', r'\brugby\b', r'\bracing\b', r'\bbarca tv\b', r'\breal madrid\b',
+        r'\bmatch!\b', r'\bfifa\b', r'\bfancode\b', r'\bwillow\b', r'\bcaze\b', r'\bcalcio\b',
+        r'\bbundesliga\b', r'\bstan sport\b', r'\boptus\b', r'\bsuper sport\b', r'\bastro super\b',
+        r'\bsportv\b', r'\bredzone\b', r'\bone fight\b', r'\btour de france\b', r'\bpga\b', r'\batp\b',
+        r'\bwta\b', r'\bdsports?\b', r'\bteledeporte\b', r'\btdp\b', r'\bmotorsport\b', r'\bmotorvision\b',
+        r'\brally\.tv\b', r'\bfight box\b', r'\bsetanta\b', r'\bstrongman\b', r'\bsupersport\b', r'\bacelerados\b'
     ]
-    event_indicators = ['evento', 'eventos', ' · ', ' vs ', ' vs. ', 'live sports', 'dudetv events', 'grand prix', 'cup', 'league']
 
-    def is_sports_channel(item_dict):
-        title_lower = item_dict["title"].lower()
-        group_lower = item_dict.get("group", "").lower()
-        full_text = f"{title_lower} {group_lower}"
-        if any(k in full_text for k in event_indicators):
+    NON_SPORTS_GROUP_PATTERNS = [
+        r'\bcctv\b', r'\bnews\b', r'\bnoticias\b', r'\brelax\b', r'\bmusic\b', r'\bk-pop\b',
+        r'\bcooking\b', r'\breligi\b', r'\bdaerah\b', r'\bnasional\b', r'\btraffic\b', r'\bweather\b',
+        r'\bshopping\b', r'\bkids\b', r'\bseries\b', r'\bcinema\b', r'\bcine\b', r'\bpeliculas\b',
+        r'\bdocumentar', r'\bgeneralist', r'\bentertainment\b'
+    ]
+
+    NON_SPORTS_TITLE_PATTERNS = [
+        r'\bcooking\b', r'\bkitchen\b', r'\bfood\b', r'\bmewatch\b', r'\bcctv\b',
+        r'\bnews\b', r'\bnoticias\b', r'\bweather\b', r'\bmeteo\b', r'\bshopping\b',
+        r'\bmusic\b', r'\bk-pop\b', r'\brelax\b', r'\bfinance\b', r'\bfinancial\b',
+        r'\bqur\'?an\b', r'\bsunnah\b', r'\brodja\b', r'\bmadani\b', r'\bchurch\b',
+        r'\bfaith\b', r'\bexit tol\b', r'\bsimpang\b', r'\bpasar\b', r'\balun-alun\b',
+        r'\bjalan\b', r'\bbundaran\b', r'\btraffic\b', r'\bhorse & country\b', r'\ble grand direct\b'
+    ]
+
+    GENERALIST_CHANNELS = [
+        r'\bla 1\b', r'\bla 2\b', r'\bantena 3\b', r'\bcuatro\b', r'\btelecinco\b', r'\bla sexta\b',
+        r'\btelemundo\b', r'\bglobo\b', r'\brecord\b', r'\bzdf\b', r'\bard\b', r'\brtp\b', r'\btvi\b',
+        r'\bsic\b', r'\btf1\b', r'\bm6\b', r'\bcctv\b', r'\bcna\b', r'\bcnn\b', r'\bkompas\b',
+        r'\bmetro tv\b', r'\bmnc\b', r'\brcti\b', r'\brtv\b', r'\btv one\b', r'\bweather\b',
+        r'\bqur\'?an\b', r'\bsmithsonian\b', r'\bocko\b', r'\bvoice of america\b', r'\bwion\b',
+        r'\byahoo\b', r'\bmewatch\b'
+    ]
+
+    def clean_group_name(raw_group: str) -> str:
+        # Eliminar prefijo del repo (ej: 'AberTown/V_Zone.m3u (V_Sport.m3u) - CCTV' -> 'CCTV')
+        if ' - ' in raw_group:
+            return raw_group.split(' - ')[-1].strip()
+        return raw_group.strip()
+
+    def normalize_str(text: str) -> str:
+        return re.sub(r'[_.\-]+', ' ', text.lower()).strip()
+
+    def is_sports_channel(item_dict: Dict[str, Any]) -> bool:
+        title = item_dict["title"]
+        raw_group = item_dict.get("group", "")
+        grp = normalize_str(clean_group_name(raw_group))
+        t_norm = normalize_str(title)
+
+        # Regla estricta 1: LOS EVENTOS SON DE DEPORTES SIEMPRE (partidos vs o transmisiones deportivas en vivo)
+        is_live_event = (' vs ' in t_norm or ' vs. ' in t_norm or 'dudetv events' in raw_group.lower())
+        if is_live_event:
             return True
-        if any(k in full_text for k in sports_keywords):
-            return True
+
+        # Regla estricta 2: Excluir títulos que son explícitamente cocina, noticias, tráfico, etc.
+        for pat in NON_SPORTS_TITLE_PATTERNS:
+            if re.search(pat, t_norm):
+                return False
+
+        # Regla estricta 3: Excluir grupos que son explícitamente noticias, CCTV, religión, relax, etc.
+        for pat in NON_SPORTS_GROUP_PATTERNS:
+            if re.search(pat, grp):
+                if 'sport' not in t_norm:
+                    return False
+
+        # Regla estricta 4: Canales generalistas nacionales (TVE La 1, Antena 3, Globo, ZDF, TF1, etc.) van a Resto
+        for pat in GENERALIST_CHANNELS:
+            if re.search(pat, t_norm):
+                # Si el título tiene marca deportiva explícita (ej: 'Sky Sport', 'BeIN', 'ESPN'), no es generalista
+                if not any(re.search(sp, t_norm) for sp in [r'\bsky sport', r'\bbein', r'\bespn', r'\bdazn']):
+                    return False
+
+        # Regla estricta 5: Coincidencia con marcas y categorías deportivas en título o grupo limpio
+        for pat in SPORTS_PATTERNS:
+            if re.search(pat, t_norm) or re.search(pat, grp):
+                return True
+
         return False
 
     sports_items = [ch for ch in final_verified if is_sports_channel(ch)]
@@ -668,7 +796,8 @@ def main():
     m3u_dep = header_dep + "\n\n".join(build_m3u_entry(ch) for ch in sports_items) + "\n"
     m3u_res = header_res + "\n\n".join(build_m3u_entry(ch) for ch in resto_items) + "\n"
 
-    base_dir = os.path.dirname(os.path.abspath(args.out)) or "."
+    # Guardar en NAS / Local
+    base_dir = os.path.dirname(os.path.abspath(args.out))
     path_dep = os.path.join(base_dir, "deportes.m3u")
     path_res = os.path.join(base_dir, "resto.m3u")
 
@@ -680,6 +809,7 @@ def main():
     cprint(f"  ✔ Lista deportes: {path_dep}", Color.GREEN)
     cprint(f"  ✔ Lista resto:    {path_res}", Color.GREEN)
 
+    # Copiar a Dropbox local y en la nube
     if not args.no_dropbox:
         dropbox_dir = "/Users/cesar/Dropbox"
         if os.path.exists(dropbox_dir):
