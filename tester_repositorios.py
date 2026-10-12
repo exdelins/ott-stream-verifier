@@ -575,7 +575,8 @@ def build_m3u_entry(item: Dict[str, Any], override_group: Optional[str] = None) 
 def upload_dropbox_cloud(local_path: str, remote_name: str = "/repos_verificados.m3u"):
     config_paths = [
         "/Volumes/docker/python/eventosDazn/dropbox.json",
-        "/Volumes/docker/telegramm3u/conf/dropbox.json"
+        "/Volumes/docker/telegramm3u/conf/dropbox.json",
+        "/root/dropbox.json"
     ]
     cfg_file = next((p for p in config_paths if os.path.exists(p)), None)
     if not cfg_file:
