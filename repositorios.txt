@@ -1,21 +1,21 @@
 # ==============================================================================
 # REPOSITORIOS Y FUENTES OTT (MPEG-DASH MPD & APPLE HLS M3U8)
 # ==============================================================================
-# Puedes pegar enlaces directos de GitHub (web o raw) o ficheros JSON.
-# El script convierte automáticamente cualquier enlace de GitHub a formato RAW.
+# Enlaces directos a fuentes RAW oficiales y ficheros JSON validados.
 # ==============================================================================
 
-https://github.com/mdjamsad9/dudetvapi/tree/main/public_decrypted
-https://github.com/AberTown/V_Zone.m3u/blob/c2620878a9e607e3958e9b86a1a0a80a21bed5bb/V_Sport.m3u
-https://github.com/iprtl/m3u/blob/a33f9ae424aac27a32b0e9b740229202eabe3936/Freetv.m3u
-https://github.com/shareext-reborn/Shareext-UpdateFilesSports.m3u/blob/b96f12a92b18c7cb078b3952485c3d6326e326f1/Shareext@playlist
-https://github.com/AFDigitalTV/AFD/blob/b59776fa2e5383a80d75f8fde162e30f90bb0236/Free
-https://github.com/luthfikenteng/Ina/blob/5da519d0530e598b9741d1c04b051a3e6c9d3569/ott
-https://github.com/AFDigitalTV/Channel/blob/754837a7943bbbc7b3056dbea69f0c897ff1ab38/TV
-https://github.com/sm-monirulislam/Upcoming-and-Live-Sports-Data/blob/821ef32315e6200b8578692d820fd478886a453f/Sports_data.json
-https://github.com/darkbyteprojects/iptv_png/blob/26b9ad91f7b5d1c00acff586559a5329bf63168f/provider_1/channels.json
-https://github.com/iptv-org/iptv/blob/dd8536a7b8eb2eb4fb328bc95b78998cd443f7ff/streams/ee.m3u
-https://github.com/hst1189/m3u-iptv/blob/4bdfaf581fd80a5b05d63d88cf4e70cf30699f4c/m3u/1_iptv-org_iptv/languages/est.m3u
-https://github.com/levi-45/iptvstream/blob/4a7405dbb6faa4d2a674e1ef2dab3601b04f5e5f/ee.m3u
-https://github.com/codechisa03/YTV/blob/2b2a511ece2d9c848548747f745b6219845e7f9f/streams/ee.m3u
-https://github.com/abhijeet620380/freetvgarden-data-v2/blob/24bbf3f2c5cbe84fa89a3fd8459d0090fae410dc/iptv/languages/est.m3u
+https://raw.githubusercontent.com/mdjamsad9/dudetvapi/main/public_decrypted/events_with_channels.json
+https://raw.githubusercontent.com/mdjamsad9/dudetvapi/main/public_decrypted/sports.json
+https://raw.githubusercontent.com/AberTown/V_Zone.m3u/c2620878a9e607e3958e9b86a1a0a80a21bed5bb/V_Sport.m3u
+https://raw.githubusercontent.com/iprtl/m3u/a33f9ae424aac27a32b0e9b740229202eabe3936/Freetv.m3u
+https://raw.githubusercontent.com/shareext-reborn/Shareext-UpdateFilesSports.m3u/b96f12a92b18c7cb078b3952485c3d6326e326f1/Shareext@playlist
+https://raw.githubusercontent.com/AFDigitalTV/AFD/b59776fa2e5383a80d75f8fde162e30f90bb0236/Free
+https://raw.githubusercontent.com/luthfikenteng/Ina/5da519d0530e598b9741d1c04b051a3e6c9d3569/ott
+https://raw.githubusercontent.com/AFDigitalTV/Channel/754837a7943bbbc7b3056dbea69f0c897ff1ab38/TV
+https://raw.githubusercontent.com/sm-monirulislam/Upcoming-and-Live-Sports-Data/821ef32315e6200b8578692d820fd478886a453f/Sports_data.json
+https://raw.githubusercontent.com/darkbyteprojects/iptv_png/26b9ad91f7b5d1c00acff586559a5329bf63168f/provider_1/channels.json
+https://raw.githubusercontent.com/iptv-org/iptv/dd8536a7b8eb2eb4fb328bc95b78998cd443f7ff/streams/ee.m3u
+https://raw.githubusercontent.com/hst1189/m3u-iptv/4bdfaf581fd80a5b05d63d88cf4e70cf30699f4c/m3u/1_iptv-org_iptv/languages/est.m3u
+https://raw.githubusercontent.com/levi-45/iptvstream/4a7405dbb6faa4d2a674e1ef2dab3601b04f5e5f/ee.m3u
+https://raw.githubusercontent.com/codechisa03/YTV/2b2a511ece2d9c848548747f745b6219845e7f9f/streams/ee.m3u
+https://raw.githubusercontent.com/abhijeet620380/freetvgarden-data-v2/24bbf3f2c5cbe84fa89a3fd8459d0090fae410dc/iptv/languages/est.m3u
